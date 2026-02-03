@@ -8,12 +8,12 @@ describe("QuotaManager", () => {
     });
 
     it("should allow first transaction", () => {
-        const quota = new QuotaManager(":memory:");
+        const quota = new QuotaManager(":memory:", 10);
         expect(quota.checkLimit("erd1test...")).toBe(true);
     });
 
     it("should increment usage", () => {
-        const quota = new QuotaManager(":memory:");
+        const quota = new QuotaManager(":memory:", 10);
         expect(() => quota.incrementUsage("erd1test...")).not.toThrow();
     });
 });

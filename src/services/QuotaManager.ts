@@ -2,10 +2,11 @@ import Database from "better-sqlite3";
 
 export class QuotaManager {
     private db: Database.Database;
-    private readonly LIMIT = 10; // 10 tx per day for now
+    private readonly limit: number;
 
-    constructor(dbPath: string = ":memory:") {
+    constructor(dbPath: string = ":memory:", limit: number = 10) {
         this.db = new Database(dbPath);
+        this.limit = limit;
         this.init();
     }
 
@@ -31,7 +32,7 @@ export class QuotaManager {
             return true;
         }
 
-        return row.count < this.LIMIT;
+        return row.count < this.limit;
     }
 
     incrementUsage(address: string): void {

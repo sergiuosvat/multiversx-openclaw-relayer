@@ -14,13 +14,17 @@ describe("RelayerService", () => {
     beforeEach(() => {
         mockProvider = {
             sendTransaction: async (tx: any) => "mock-tx-hash",
+            queryContract: async (query: any) => {
+                // Mock response mimicking a successful query (returning some data)
+                return { returnData: ["base64EncodedData"] };
+            }
         } as unknown as ProxyNetworkProvider;
 
         const mnemonic = Mnemonic.generate();
         relayerSigner = new UserSigner(mnemonic.deriveKey(0));
-        quotaManager = new QuotaManager(":memory:");
+        quotaManager = new QuotaManager(":memory:", 10);
 
-        relayer = new RelayerService(mockProvider, relayerSigner, quotaManager);
+        relayer = new RelayerService(mockProvider, relayerSigner, quotaManager, "erd1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq6gq4hu");
     });
 
     it("should validate a correct transaction", async () => {

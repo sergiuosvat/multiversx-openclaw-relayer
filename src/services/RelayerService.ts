@@ -7,11 +7,18 @@ export class RelayerService {
     private provider: ProxyNetworkProvider;
     private relayerSigner: UserSigner;
     private quotaManager: QuotaManager;
+    private identityRegistryAddress: string;
 
-    constructor(provider: ProxyNetworkProvider, relayerSigner: UserSigner, quotaManager: QuotaManager) {
+    constructor(
+        provider: ProxyNetworkProvider,
+        relayerSigner: UserSigner,
+        quotaManager: QuotaManager,
+        identityRegistryAddress: string = "" // Default for now
+    ) {
         this.provider = provider;
         this.relayerSigner = relayerSigner;
         this.quotaManager = quotaManager;
+        this.identityRegistryAddress = identityRegistryAddress;
     }
 
     async validateTransaction(tx: Transaction): Promise<boolean> {
@@ -31,8 +38,37 @@ export class RelayerService {
     }
 
     async checkEligibility(sender: Address): Promise<boolean> {
-        // TODO: Query Identity Registry contract
-        return true;
+        if (!this.identityRegistryAddress) {
+            console.warn("Identity Registry Address not configured. Skipping eligibility check.");
+            return true; // Use with caution!
+        }
+
+        try {
+            // Manual query construction to avoid ABI dependency
+            // Query: getAgentId(senderAddress) -> u64 (or similar ID)
+            const query = {
+                scAddress: Address.newFromBech32(this.identityRegistryAddress),
+                func: "getAgentId",
+                args: [sender.toHex()]
+            };
+
+            const queryResponse = await this.provider.queryContract(query as any);
+
+            // If we get data back, it means an ID was returned.
+            // A non-registered agent might return empty result or error depending on SC implementation.
+            // Assuming successful return of ID means registered.
+            if (queryResponse.returnData && queryResponse.returnData.length > 0) {
+                // We could decode the ID here if needed, but presence is enough for now.
+                return true;
+            }
+
+            return false;
+        } catch (error) {
+            console.error("Error checking eligibility:", error);
+            // Fail safe: if we can't verify, we should probably deny?
+            // Or allow if it's network error? strictly, deny.
+            return false;
+        }
     }
 
     async signAndRelay(tx: Transaction): Promise<string> {
