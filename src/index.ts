@@ -4,6 +4,7 @@ import * as fs from "fs";
 import { createApp } from "./api/server";
 import { config } from "./config";
 import { QuotaManager } from "./services/QuotaManager";
+import { ChallengeManager } from "./services/ChallengeManager";
 import { RelayerService } from "./services/RelayerService";
 
 // Helper to load PEM
@@ -31,9 +32,16 @@ const main = async () => {
     console.log(`Relayer Address: ${relayerSigner.getAddress().bech32()}`);
 
     const quotaManager = new QuotaManager(config.dbPath, config.quotaLimit);
-    const relayerService = new RelayerService(provider, relayerSigner, quotaManager, config.identityRegistryAddress);
+    const challengeManager = new ChallengeManager(config.challengeTimeout, config.challengeDifficulty);
+    const relayerService = new RelayerService(
+        provider,
+        relayerSigner,
+        quotaManager,
+        challengeManager,
+        [config.identityRegistryAddress, config.reputationRegistryAddress, config.validationRegistryAddress].filter(a => !!a)
+    );
 
-    const app = createApp(relayerService);
+    const app = createApp(relayerService, challengeManager);
 
     app.listen(config.port, () => {
         console.log(`Server listening on port ${config.port}`);

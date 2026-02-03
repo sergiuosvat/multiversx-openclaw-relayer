@@ -1,9 +1,10 @@
 import express from "express";
 import cors from "cors";
 import { RelayerService } from "../services/RelayerService";
+import { ChallengeManager } from "../services/ChallengeManager";
 import { Transaction } from "@multiversx/sdk-core";
 
-export const createApp = (relayerService: RelayerService) => {
+export const createApp = (relayerService: RelayerService, challengeManager: ChallengeManager) => {
     const app = express();
 
     app.use(cors());
@@ -13,28 +14,39 @@ export const createApp = (relayerService: RelayerService) => {
         res.status(200).json({ status: "ok" });
     });
 
+    /**
+     * Request a PoW challenge for a specific address.
+     * Required for agents who are not yet registered.
+     */
+    app.post("/challenge", (req, res) => {
+        const { address } = req.body;
+        if (!address) {
+            res.status(400).json({ error: "Address is required" });
+            return;
+        }
+
+        const challenge = challengeManager.getChallenge(address);
+        res.status(200).json(challenge);
+    });
+
     app.post("/relay", async (req, res) => {
         try {
-            const txData = req.body;
+            const { transaction, challengeNonce } = req.body;
 
-            if (!txData || typeof txData !== "object") {
-                res.status(400).json({ error: "Invalid transaction payload" });
+            if (!transaction) {
+                res.status(400).json({ error: "Transaction is required" });
                 return;
             }
 
-            // Reconstruct transaction from plain object
-            // We assume the client sends a plain object manageable by Transaction.newFromPlainObject
-            // or we might need to be careful about what newFromPlainObject expects.
-            // Let's wrap in try/catch specifically for parsing.
             let tx: Transaction;
             try {
-                tx = Transaction.newFromPlainObject(txData);
+                tx = Transaction.newFromPlainObject(transaction);
             } catch (err: any) {
                 res.status(400).json({ error: "Invalid transaction format", details: err.message });
                 return;
             }
 
-            const txHash = await relayerService.signAndRelay(tx);
+            const txHash = await relayerService.signAndRelay(tx, challengeNonce);
             res.status(200).json({ txHash });
         } catch (error: any) {
             console.error("Relay error:", error);
@@ -42,6 +54,8 @@ export const createApp = (relayerService: RelayerService) => {
 
             if (message.includes("Quota exceeded")) {
                 res.status(429).json({ error: message });
+            } else if (message.includes("verification failed") || message.includes("Unauthorized")) {
+                res.status(403).json({ error: message });
             } else if (message.includes("Invalid inner transaction")) {
                 res.status(400).json({ error: message });
             } else {
