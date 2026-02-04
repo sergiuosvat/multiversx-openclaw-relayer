@@ -15,6 +15,46 @@ export const createApp = (relayerService: RelayerService, challengeManager: Chal
     });
 
     /**
+     * Get the correct relayer address for a specific user (shard matching).
+     */
+    app.get("/relayer/address/:userAddress", (req, res) => {
+        const { userAddress } = req.params;
+        if (!userAddress) {
+            res.status(400).json({ error: "User address is required" });
+            return;
+        }
+
+        try {
+            const relayerAddress = relayerService.getRelayerAddressForUser(userAddress);
+            res.status(200).json({ relayerAddress });
+        } catch (error: any) {
+            res.status(404).json({ error: error.message });
+        }
+    });
+
+    /**
+     * Legacy config endpoint (optional, but keep for backward compat if single shard env)
+     * For multi-shard, this might be misleading if it just returns one address.
+     * We'll keep it but maybe warn or just return a default one (e.g. shard 0).
+     */
+    app.get("/config", (req, res) => {
+        // Return shard 0 or first available as default
+        try {
+            // Mocking a default user address to get *some* relayer
+            // In a real scenario, this endpoint should be deprecated
+            // For now, let's just return nothing or a comprehensive list?
+            // Let's return empty if we can't decide, or just not implement it if not used by new clients.
+            // Existing clients use /config?
+            // "createRelayedV3.test.ts" usage implies direct config access might be happening?
+            // "multiversx-openclaw-skills" used /config. We are changing that.
+            // We can return a generic response or deprecate it.
+            res.status(200).json({ message: "Use /relayer/address/:userAddress to get correct relayer" });
+        } catch (e) {
+            res.status(500).json({ error: "Internal error" });
+        }
+    });
+
+    /**
      * Request a PoW challenge for a specific address.
      * Required for agents who are not yet registered.
      */

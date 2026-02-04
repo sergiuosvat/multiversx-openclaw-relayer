@@ -1,16 +1,18 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { RelayerService } from "../src/services/RelayerService";
 import { Transaction, Address, TransactionComputer } from "@multiversx/sdk-core";
-import { UserSigner, Mnemonic, UserVerifier, UserPublicKey } from "@multiversx/sdk-wallet";
+import { UserSigner, Mnemonic } from "@multiversx/sdk-wallet";
 import { ProxyNetworkProvider } from "@multiversx/sdk-network-providers";
 import { QuotaManager } from "../src/services/QuotaManager";
 import { ChallengeManager } from "../src/services/ChallengeManager";
+import { RelayerAddressManager } from "../src/services/RelayerAddressManager";
 
 describe("RelayerService", () => {
     let relayer: RelayerService;
     let quotaManager: QuotaManager;
     let challengeManager: ChallengeManager;
     let mockProvider: ProxyNetworkProvider;
+    let mockRelayerAddressManager: RelayerAddressManager; // Mock
     let relayerSigner: UserSigner;
     const REGISTRY_ADDR = "erd1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq6gq4hu";
 
@@ -23,10 +25,19 @@ describe("RelayerService", () => {
 
         const mnemonic = Mnemonic.generate();
         relayerSigner = new UserSigner(mnemonic.deriveKey(0));
+
+        // Mock RelayerAddressManager to return the single signer we created
+        mockRelayerAddressManager = {
+            getRelayerAddressForUser: vi.fn().mockReturnValue(relayerSigner.getAddress().bech32()),
+            getSignerForUser: vi.fn().mockReturnValue(relayerSigner),
+            loadWallets: vi.fn(),
+            getShard: vi.fn().mockReturnValue(1)
+        } as unknown as RelayerAddressManager;
+
         quotaManager = new QuotaManager(":memory:", 10);
         challengeManager = new ChallengeManager(60, 4); // Low difficulty for tests (4 bits)
 
-        relayer = new RelayerService(mockProvider, relayerSigner, quotaManager, challengeManager, [REGISTRY_ADDR]);
+        relayer = new RelayerService(mockProvider, mockRelayerAddressManager, quotaManager, challengeManager, [REGISTRY_ADDR]);
     });
 
     it("should validate a correct transaction", async () => {
@@ -46,7 +57,7 @@ describe("RelayerService", () => {
 
         const computer = new TransactionComputer();
         const signature = await signer.sign(computer.computeBytesForSigning(tx));
-        tx.signature = signature;
+        tx.signature = Uint8Array.from(signature);
 
         await expect(relayer.validateTransaction(tx)).resolves.toBe(true);
     });
@@ -68,16 +79,18 @@ describe("RelayerService", () => {
             sender: sender,
             gasLimit: 50000n,
             chainID: "D",
-            version: 1,
+            relayer: Address.newFromBech32(relayerSigner.getAddress().bech32()),
+            version: 2,
         });
         const computer = new TransactionComputer();
         const signature = await signer.sign(computer.computeBytesForSigning(tx));
-        tx.signature = signature;
+        tx.signature = Uint8Array.from(signature);
 
         // Mock being registered
         vi.spyOn(relayer, 'isRegisteredAgent').mockResolvedValue(true);
 
         await expect(relayer.signAndRelay(tx)).resolves.toBe("mock-tx-hash");
+        expect(mockRelayerAddressManager.getSignerForUser).toHaveBeenCalledWith(sender.toBech32());
     });
 
     it("should permit registration with a valid challenge solution", async () => {
@@ -95,8 +108,6 @@ describe("RelayerService", () => {
                 solvedNonce = nonce.toString();
                 // Re-add to challenge manager because verifySolution deletes it
                 challengeManager.getChallenge(sender.toBech32());
-                // Set the specific salt and difficulty from the original for the relayer's internal manager
-                // Actually easier to just mock verifySolution or use the real manager if we can find a nonce.
                 break;
             }
             nonce++;
@@ -109,16 +120,15 @@ describe("RelayerService", () => {
             sender: sender,
             gasLimit: 50000n,
             chainID: "D",
-            version: 1,
-            data: Buffer.from("register_agent@6e616d65@68747470733a2f2f6578616d706c652e636f6d@7075626b6579") // name@uri@pk
+            relayer: Address.newFromBech32(relayerSigner.getAddress().bech32()),
+            version: 2,
+            data: Uint8Array.from(Buffer.from("register_agent@6e616d65@68747470733a2f2f6578616d706c652e636f6d@7075626b6579")) // name@uri@pk
         });
         const computer = new TransactionComputer();
         const signature = await signer.sign(computer.computeBytesForSigning(tx));
-        tx.signature = signature;
+        tx.signature = Uint8Array.from(signature);
 
         // Re-inject a valid challenge for verification
-        // Since we are using the real ChallengeManager, we need a real solution.
-        // Let's just mock verification to avoid timing issues in tests.
         vi.spyOn(challengeManager, 'verifySolution').mockReturnValue(true);
 
         await expect(relayer.signAndRelay(tx, "valid-nonce")).resolves.toBe("mock-tx-hash");
@@ -141,11 +151,12 @@ describe("RelayerService", () => {
             sender: sender,
             gasLimit: 50000n,
             chainID: "D",
-            version: 1,
+            relayer: Address.newFromBech32(relayerSigner.getAddress().bech32()),
+            version: 2,
         });
         const computer = new TransactionComputer();
         const signature = await signer.sign(computer.computeBytesForSigning(tx));
-        tx.signature = signature;
+        tx.signature = Uint8Array.from(signature);
 
         await expect(relayer.signAndRelay(tx)).rejects.toThrow("Quota exceeded for this agent");
     });

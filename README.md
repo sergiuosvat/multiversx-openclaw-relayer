@@ -34,8 +34,12 @@ Create a `.env` file in the root directory:
 NETWORK_PROVIDER=https://devnet-gateway.multiversx.com
 IDENTITY_REGISTRY_ADDRESS=erd1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq6gq4hu
 
-# Relayer Wallet
-RELAYER_PEM_PATH=./relayer.pem
+# Relayer Wallet (Multi-Shard Support)
+# To support multiple shards, provide a directory containing "shardX.pem" files.
+RELAYER_WALLETS_DIR=./wallets/
+
+# Legacy (Single Shard)
+# RELAYER_PEM_PATH=./relayer.pem
 
 # Security & Limits
 QUOTA_LIMIT=10  # Max transactions per agent per 24h

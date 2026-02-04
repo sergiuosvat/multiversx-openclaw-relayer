@@ -3,26 +3,31 @@ import { UserVerifier, UserSigner, UserPublicKey } from "@multiversx/sdk-wallet"
 import { ProxyNetworkProvider } from "@multiversx/sdk-network-providers";
 import { QuotaManager } from "./QuotaManager";
 import { ChallengeManager } from "./ChallengeManager";
+import { RelayerAddressManager } from "./RelayerAddressManager";
 
 export class RelayerService {
     private provider: ProxyNetworkProvider;
-    private relayerSigner: UserSigner;
+    private relayerAddressManager: RelayerAddressManager;
     private quotaManager: QuotaManager;
     private challengeManager: ChallengeManager;
     private registryAddresses: string[];
 
     constructor(
         provider: ProxyNetworkProvider,
-        relayerSigner: UserSigner,
+        relayerAddressManager: RelayerAddressManager,
         quotaManager: QuotaManager,
         challengeManager: ChallengeManager,
         registryAddresses: string[] = []
     ) {
         this.provider = provider;
-        this.relayerSigner = relayerSigner;
+        this.relayerAddressManager = relayerAddressManager;
         this.quotaManager = quotaManager;
         this.challengeManager = challengeManager;
         this.registryAddresses = registryAddresses;
+    }
+
+    public getRelayerAddressForUser(userAddress: string): string {
+        return this.relayerAddressManager.getRelayerAddressForUser(userAddress);
     }
 
     async validateTransaction(tx: Transaction): Promise<boolean> {
@@ -94,12 +99,21 @@ export class RelayerService {
         }
 
         // 4. Wrap & Sign
-        const relayerAddress = this.relayerSigner.getAddress();
-        tx.relayer = Address.newFromBech32(relayerAddress.bech32());
-        tx.version = 2; // Relayed V2
+        const relayerSigner = this.relayerAddressManager.getSignerForUser(sender.toBech32());
+        const relayerAddress = relayerSigner.getAddress();
+
+        // VALIDATION: In Relayed V3, the sender MUST set the relayer address BEFORE signing.
+        // We must not overwrite it, but we MUST verify it's correct for the sender's shard.
+        if (!tx.relayer || tx.relayer.toBech32() !== relayerAddress.bech32()) {
+            throw new Error(`Invalid relayer address. Expected ${relayerAddress.bech32()} for sender's shard.`);
+        }
+
+        if (tx.version < 2) {
+            throw new Error("Invalid transaction version for Relayed V3. Expected version >= 2.");
+        }
 
         const computer = new TransactionComputer();
-        tx.relayerSignature = await this.relayerSigner.sign(computer.computeBytesForSigning(tx));
+        tx.relayerSignature = await relayerSigner.sign(computer.computeBytesForSigning(tx));
 
         // 5. Broadcast
         try {
