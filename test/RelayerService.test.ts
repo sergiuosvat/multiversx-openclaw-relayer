@@ -65,7 +65,7 @@ describe("RelayerService", () => {
 
     it("should check registration status correctly", async () => {
         const sender = Address.newFromBech32("erd1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq6gq4hu");
-        await expect(relayer.isRegisteredAgent(sender)).resolves.toBe(true);
+        await expect(relayer.isAuthorized(sender)).resolves.toBe(true);
     });
 
     it("should sign and relay a transaction for registered agent", async () => {
@@ -88,7 +88,7 @@ describe("RelayerService", () => {
         tx.signature = Uint8Array.from(signature);
 
         // Mock being registered
-        vi.spyOn(relayer, 'isRegisteredAgent').mockResolvedValue(true);
+        vi.spyOn(relayer, 'isAuthorized').mockResolvedValue(true);
 
         await expect(relayer.signAndRelay(tx)).resolves.toBe("mock-tx-hash");
         expect(mockRelayerAddressManager.getSignerForUser).toHaveBeenCalledWith(sender.toBech32());
