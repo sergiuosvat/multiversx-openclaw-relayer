@@ -1,11 +1,24 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { RelayerService } from "../src/services/RelayerService";
-import { Transaction, Address, TransactionComputer } from "@multiversx/sdk-core";
+import { Transaction, Address, TransactionComputer, ContractQuery } from "@multiversx/sdk-core";
 import { UserSigner, Mnemonic } from "@multiversx/sdk-wallet";
 import { ProxyNetworkProvider } from "@multiversx/sdk-network-providers";
 import { QuotaManager } from "../src/services/QuotaManager";
 import { ChallengeManager } from "../src/services/ChallengeManager";
 import { RelayerAddressManager } from "../src/services/RelayerAddressManager";
+
+vi.mock("@multiversx/sdk-core", async (importOriginal) => {
+    const mod = await importOriginal<typeof import("@multiversx/sdk-core")>();
+    return {
+        ...mod,
+        ContractQuery: class MockContractQuery {
+            constructor(args: any) { Object.assign(this, args); }
+        },
+        ContractFunction: class MockContractFunction {
+            constructor(name: string) { }
+        }
+    };
+});
 
 describe("RelayerService", () => {
     let relayer: RelayerService;

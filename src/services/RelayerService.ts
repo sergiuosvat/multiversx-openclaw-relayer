@@ -1,4 +1,4 @@
-import { Transaction, Address, TransactionComputer, INetworkProvider } from "@multiversx/sdk-core";
+import { Transaction, Address, TransactionComputer, INetworkProvider, ContractQuery, ContractFunction } from "@multiversx/sdk-core";
 import { UserVerifier, UserSigner, UserPublicKey } from "@multiversx/sdk-wallet";
 import { QuotaManager } from "./QuotaManager";
 import { ChallengeManager } from "./ChallengeManager";
@@ -49,17 +49,18 @@ export class RelayerService {
         if (this.registryAddresses.length === 0) return true; // Fail open if misconfigured
 
         // 1. Check On-Chain Registry
+        // 1. Check On-Chain Registry
         const identityRegistry = this.registryAddresses[0];
         try {
-            const vmQueryUrl = "/vm-values/query";
-            const queryPayload = {
-                scAddress: identityRegistry,
-                funcName: "get_agent_id",
-                args: [Buffer.from(address.getPublicKey()).toString("hex")]
-            };
+            const query = new ContractQuery({
+                address: new Address(identityRegistry),
+                func: new ContractFunction("get_agent_id"),
+                args: [new Address(address.toBech32())]
+            });
 
-            const queryResponse = await (this.provider as any).doPostGeneric(vmQueryUrl, queryPayload);
-            const isRegistered = queryResponse?.data?.data?.returnData && queryResponse.data.data.returnData.length > 0;
+            const queryResponse = await this.provider.queryContract(query);
+            const returnData = queryResponse.returnData;
+            const isRegistered = returnData && returnData.length > 0;
 
             if (isRegistered) return true;
         } catch (error) {
