@@ -1,19 +1,18 @@
-import { Transaction, Address, TransactionComputer } from "@multiversx/sdk-core";
+import { Transaction, Address, TransactionComputer, INetworkProvider } from "@multiversx/sdk-core";
 import { UserVerifier, UserSigner, UserPublicKey } from "@multiversx/sdk-wallet";
-import { ProxyNetworkProvider } from "@multiversx/sdk-network-providers";
 import { QuotaManager } from "./QuotaManager";
 import { ChallengeManager } from "./ChallengeManager";
 import { RelayerAddressManager } from "./RelayerAddressManager";
 
 export class RelayerService {
-    private provider: ProxyNetworkProvider;
+    private provider: INetworkProvider;
     private relayerAddressManager: RelayerAddressManager;
     private quotaManager: QuotaManager;
     private challengeManager: ChallengeManager;
     private registryAddresses: string[];
 
     constructor(
-        provider: ProxyNetworkProvider,
+        provider: INetworkProvider,
         relayerAddressManager: RelayerAddressManager,
         quotaManager: QuotaManager,
         challengeManager: ChallengeManager,
@@ -51,7 +50,7 @@ export class RelayerService {
 
         const identityRegistry = this.registryAddresses[0]; // Assume first is Identity
         try {
-            // Use the doPostGeneric pattern for VM queries
+            // Use the doPostGeneric pattern for VM queries (if provider supports it, otherwise generic fallback)
             const vmQueryUrl = "/vm-values/query";
             const queryPayload = {
                 scAddress: identityRegistry,
@@ -117,10 +116,15 @@ export class RelayerService {
 
         // 5. Pre-broadcast Simulation (Crucial for Relayed V3)
         try {
-            const simulationResult = await this.provider.simulateTransaction(tx);
-            if (simulationResult?.execution?.result !== 'success') {
-                const msg = simulationResult?.execution?.message || 'Simulation failed';
-                throw new Error(`On-chain simulation failed: ${msg}`);
+            const simulationResult: any = await this.provider.simulateTransaction(tx);
+
+            // Robust Parser: Handle both flattened (API) and nested (Proxy/Gateway) structures
+            const execution = simulationResult?.execution || simulationResult?.result?.execution;
+            const resultStatus = execution?.result;
+
+            if (resultStatus !== 'success') {
+                const message = execution?.message || simulationResult?.error || 'Unknown error';
+                throw new Error(`On-chain simulation failed: ${message}`);
             }
         } catch (simError: any) {
             console.error("Simulation failed:", simError);

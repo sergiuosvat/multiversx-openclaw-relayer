@@ -1,4 +1,4 @@
-import { ProxyNetworkProvider } from "@multiversx/sdk-network-providers";
+import { DevnetEntrypoint } from "@multiversx/sdk-core";
 import { RelayerAddressManager } from "./services/RelayerAddressManager";
 import * as fs from "fs";
 import { createApp } from "./api/server";
@@ -7,12 +7,14 @@ import { QuotaManager } from "./services/QuotaManager";
 import { ChallengeManager } from "./services/ChallengeManager";
 import { RelayerService } from "./services/RelayerService";
 
-
 const main = async () => {
     console.log("Starting MultiversX OpenClaw Relayer...");
     console.log("Config:", JSON.stringify({ ...config, relayerPemPath: "***" }, null, 2));
 
-    const provider = new ProxyNetworkProvider(config.networkProvider);
+    const url = config.networkProvider;
+    const kind = url.includes('api') ? 'api' : 'proxy';
+    const entrypoint = new DevnetEntrypoint({ url, kind });
+    const provider = entrypoint.createNetworkProvider();
 
     // Initialize Address Manager
     const relayerAddressManager = new RelayerAddressManager(config.relayerWalletsDir);
