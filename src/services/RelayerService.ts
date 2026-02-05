@@ -1,13 +1,40 @@
-import { Transaction, Address, TransactionComputer, SmartContractQuery, ContractFunction, AddressValue } from "@multiversx/sdk-core";
-import { UserVerifier, UserSigner, UserPublicKey } from "@multiversx/sdk-wallet";
-import { QuotaManager } from "./QuotaManager";
-import { ChallengeManager } from "./ChallengeManager";
-import { RelayerAddressManager } from "./RelayerAddressManager";
+import {
+    Transaction,
+    Address,
+    TransactionComputer,
+    SmartContractQuery,
+} from '@multiversx/sdk-core';
+import { UserVerifier, UserPublicKey } from '@multiversx/sdk-wallet';
+import { QuotaManager } from './QuotaManager';
+import { ChallengeManager } from './ChallengeManager';
+import { RelayerAddressManager } from './RelayerAddressManager';
+
+export interface ISimulationResult {
+    status?: {
+        status?: string;
+    };
+    raw?: {
+        status?: string;
+    };
+    execution?: {
+        result?: string;
+        message?: string;
+        gasConsumed?: number;
+    };
+    result?: {
+        execution?: {
+            result?: string;
+            message?: string;
+            gasConsumed?: number;
+        };
+    };
+    error?: string;
+}
 
 export interface IRelayerNetworkProvider {
     queryContract(query: SmartContractQuery): Promise<any>;
     sendTransaction(tx: Transaction): Promise<string>;
-    simulateTransaction(tx: Transaction): Promise<any>;
+    simulateTransaction(tx: Transaction): Promise<ISimulationResult>;
 }
 
 export class RelayerService {
@@ -22,7 +49,7 @@ export class RelayerService {
         relayerAddressManager: RelayerAddressManager,
         quotaManager: QuotaManager,
         challengeManager: ChallengeManager,
-        registryAddresses: string[] = []
+        registryAddresses: string[] = [],
     ) {
         this.provider = provider;
         this.relayerAddressManager = relayerAddressManager;
@@ -46,7 +73,7 @@ export class RelayerService {
 
             return isValid;
         } catch (error) {
-            console.error("Validation error:", error);
+            console.error('Validation error:', error);
             return false;
         }
     }
@@ -59,8 +86,8 @@ export class RelayerService {
         try {
             const query = new SmartContractQuery({
                 contract: new Address(identityRegistry),
-                function: "get_agent_id",
-                arguments: [new Address(address.toBech32()).getPublicKey()]
+                function: 'get_agent_id',
+                arguments: [new Address(address.toBech32()).getPublicKey()],
             });
 
             const queryResponse = await this.provider.queryContract(query);
@@ -69,23 +96,24 @@ export class RelayerService {
 
             if (isRegistered) return true;
         } catch (error) {
-            console.error("Agent registration check failed:", error);
+            console.error('Agent registration check failed:', error);
         }
 
         // 2. Fallback: Check if challenge was solved (for registration flow)
-        // This is handled by the caller checking the challengeNonce usually, 
+        // This is handled by the caller checking the challengeNonce usually,
         // but if we want "isAuthorized" to mean "can relay", we need to know the context.
         return false;
     }
 
-    async signAndRelay(tx: Transaction, challengeNonce?: string): Promise<string> {
+    async signAndRelay(
+        tx: Transaction,
+        challengeNonce?: string,
+    ): Promise<string> {
         const sender = tx.sender;
-        const receiver = tx.receiver.toBech32();
-        const data = tx.data.toString();
 
         // 1. Quota Check
         if (!this.quotaManager.checkLimit(sender.toBech32())) {
-            throw new Error("Quota exceeded for this agent");
+            throw new Error('Quota exceeded for this agent');
         }
 
         // 2. Authorization Logic
@@ -98,49 +126,65 @@ export class RelayerService {
         // Case B: New Agent solving challenge -> Authorized ONLY for registration
         else {
             // If not registered, they MUST solve a challenge AND must be trying to register.
-            if (!challengeNonce || !this.challengeManager.verifySolution(sender.toBech32(), challengeNonce)) {
-                throw new Error("Unauthorized: Agent not registered. Solve challenge and register first.");
+            if (
+                !challengeNonce ||
+                !this.challengeManager.verifySolution(sender.toBech32(), challengeNonce)
+            ) {
+                throw new Error(
+                    'Unauthorized: Agent not registered. Solve challenge and register first.',
+                );
             }
         }
 
         // 3. Signature Validation
         if (!(await this.validateTransaction(tx))) {
-            throw new Error("Invalid inner transaction signature");
+            throw new Error('Invalid inner transaction signature');
         }
 
         // 4. Wrap & Sign
-        const relayerSigner = this.relayerAddressManager.getSignerForUser(sender.toBech32());
+        const relayerSigner = this.relayerAddressManager.getSignerForUser(
+            sender.toBech32(),
+        );
         const relayerAddress = relayerSigner.getAddress();
 
         // VALIDATION: In Relayed V3, the sender MUST set the relayer address BEFORE signing.
         // We must not overwrite it, but we MUST verify it's correct for the sender's shard.
         if (!tx.relayer || tx.relayer.toBech32() !== relayerAddress.bech32()) {
-            throw new Error(`Invalid relayer address. Expected ${relayerAddress.bech32()} for sender's shard.`);
+            throw new Error(
+                `Invalid relayer address. Expected ${relayerAddress.bech32()} for sender's shard.`,
+            );
         }
 
         if (tx.version < 2) {
-            throw new Error("Invalid transaction version for Relayed V3. Expected version >= 2.");
+            throw new Error(
+                'Invalid transaction version for Relayed V3. Expected version >= 2.',
+            );
         }
 
         const computer = new TransactionComputer();
-        tx.relayerSignature = await relayerSigner.sign(computer.computeBytesForSigning(tx));
+        tx.relayerSignature = await relayerSigner.sign(
+            computer.computeBytesForSigning(tx),
+        );
 
         // 5. Pre-broadcast Simulation (Crucial for Relayed V3)
         try {
-            const simulationResult: any = await this.provider.simulateTransaction(tx);
+            const simulationResult = await this.provider.simulateTransaction(tx);
 
             // Robust Parser: Handle both flattened (API) and nested (Proxy/Gateway) structures
             const statusFromStatus = simulationResult?.status?.status;
             const statusFromRaw = simulationResult?.raw?.status;
-            const execution = simulationResult?.execution || simulationResult?.result?.execution;
-            const resultStatus = statusFromStatus || statusFromRaw || execution?.result;
+            const execution =
+                simulationResult?.execution || simulationResult?.result?.execution;
+            const resultStatus =
+                statusFromStatus || statusFromRaw || execution?.result;
 
             if (resultStatus !== 'success') {
-                const message = execution?.message || simulationResult?.error || 'Unknown error';
+                const message =
+                    execution?.message || simulationResult?.error || 'Unknown error';
                 throw new Error(`On-chain simulation failed: ${message}`);
             }
         } catch (simError: any) {
-            console.error("Simulation failed:", simError);
+            console.error('Simulation failed:', simError);
             throw new Error(`Simulation error: ${simError.message}`);
         }
 
@@ -150,7 +194,7 @@ export class RelayerService {
             this.quotaManager.incrementUsage(sender.toBech32());
             return hash;
         } catch (error: any) {
-            console.error("Broadcast failed:", error);
+            console.error('Broadcast failed:', error);
             throw new Error(`Broadcast failed: ${error.message}`);
         }
     }

@@ -1,44 +1,55 @@
-import { DevnetEntrypoint } from "@multiversx/sdk-core";
-import { RelayerAddressManager } from "./services/RelayerAddressManager";
-import * as fs from "fs";
-import { createApp } from "./api/server";
-import { config } from "./config";
-import { QuotaManager } from "./services/QuotaManager";
-import { ChallengeManager } from "./services/ChallengeManager";
-import { RelayerService } from "./services/RelayerService";
+import { DevnetEntrypoint } from '@multiversx/sdk-core';
+import { RelayerAddressManager } from './services/RelayerAddressManager';
+import { createApp } from './api/server';
+import { config } from './config';
+import { QuotaManager } from './services/QuotaManager';
+import { ChallengeManager } from './services/ChallengeManager';
+import { RelayerService } from './services/RelayerService';
 
 const main = async () => {
-    console.log("Starting MultiversX OpenClaw Relayer...");
-    console.log("Config:", JSON.stringify({ ...config, relayerPemPath: "***" }, null, 2));
+  console.log('Starting MultiversX OpenClaw Relayer...');
+  console.log(
+    'Config:',
+    JSON.stringify({ ...config, relayerPemPath: '***' }, null, 2),
+  );
 
-    const url = config.networkProvider;
-    const kind = url.includes('api') ? 'api' : 'proxy';
-    const entrypoint = new DevnetEntrypoint({ url, kind });
-    const provider = entrypoint.createNetworkProvider();
+  const url = config.networkProvider;
+  const kind = url.includes('api') ? 'api' : 'proxy';
+  const entrypoint = new DevnetEntrypoint({ url, kind });
+  const provider = entrypoint.createNetworkProvider();
 
-    // Initialize Address Manager
-    const relayerAddressManager = new RelayerAddressManager(config.relayerWalletsDir);
+  // Initialize Address Manager
+  const relayerAddressManager = new RelayerAddressManager(
+    config.relayerWalletsDir,
+  );
 
-    const quotaManager = new QuotaManager(config.dbPath, config.quotaLimit);
-    const challengeManager = new ChallengeManager(config.challengeTimeout, config.challengeDifficulty);
-    const relayerService = new RelayerService(
-        provider,
-        relayerAddressManager,
-        quotaManager,
-        challengeManager,
-        [config.identityRegistryAddress, config.reputationRegistryAddress, config.validationRegistryAddress].filter(a => !!a)
-    );
+  const quotaManager = new QuotaManager(config.dbPath, config.quotaLimit);
+  const challengeManager = new ChallengeManager(
+    config.challengeTimeout,
+    config.challengeDifficulty,
+  );
+  const relayerService = new RelayerService(
+    provider,
+    relayerAddressManager,
+    quotaManager,
+    challengeManager,
+    [
+      config.identityRegistryAddress,
+      config.reputationRegistryAddress,
+      config.validationRegistryAddress,
+    ].filter(a => !!a),
+  );
 
-    const app = createApp(relayerService, challengeManager);
+  const app = createApp(relayerService, challengeManager);
 
-    app.listen(config.port, () => {
-        console.log(`Server listening on port ${config.port}`);
-    });
+  app.listen(config.port, () => {
+    console.log(`Server listening on port ${config.port}`);
+  });
 };
 
 if (require.main === module) {
-    main().catch(err => {
-        console.error("Fatal error:", err);
-        process.exit(1);
-    });
+  main().catch(err => {
+    console.error('Fatal error:', err);
+    process.exit(1);
+  });
 }
