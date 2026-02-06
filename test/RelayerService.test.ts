@@ -43,7 +43,12 @@ describe('RelayerService', () => {
             sendTransaction: async (_tx: any) => 'mock-tx-hash',
             simulateTransaction: vi
                 .fn()
-                .mockResolvedValue({ execution: { result: 'success' } }),
+                .mockResolvedValue({
+                    execution: {
+                        result: 'success',
+                        gasConsumed: 50000n // realism: SDK returns BigInt for gas
+                    }
+                }),
             queryContract: vi
                 .fn()
                 .mockResolvedValue({ returnData: ['base64EncodedData'] }),
@@ -103,6 +108,16 @@ describe('RelayerService', () => {
         await expect(relayer.isAuthorized(sender)).resolves.toBe(true);
     });
 
+    it('should reject when agent ID is 0', async () => {
+        const sender = Address.newFromBech32(
+            'erd1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq6gq4hu',
+        );
+        // Mock returning 0
+        mockProvider.queryContract = vi.fn().mockResolvedValue({
+            returnData: [Buffer.from('0000000000000000', 'hex').toString('base64')]
+        });
+        await expect(relayer.isAuthorized(sender)).resolves.toBe(false);
+    });
     it('should sign and relay a transaction for registered agent', async () => {
         const mnemonic = Mnemonic.generate();
         const signer = new UserSigner(mnemonic.deriveKey(0));
@@ -174,6 +189,41 @@ describe('RelayerService', () => {
 
         await expect(relayer.signAndRelay(tx, 'valid-nonce')).resolves.toBe(
             'mock-tx-hash',
+        );
+    });
+
+    it('should reject transaction when simulation fails', async () => {
+        const mnemonic = Mnemonic.generate();
+        const signer = new UserSigner(mnemonic.deriveKey(0));
+        const sender = Address.newFromBech32(signer.getAddress().bech32());
+
+        const tx = new Transaction({
+            nonce: 1n,
+            value: 0n,
+            receiver: sender,
+            sender: sender,
+            gasLimit: 50000n,
+            chainID: 'D',
+            relayer: Address.newFromBech32(relayerSigner.getAddress().bech32()),
+            version: 2,
+        });
+        const computer = new TransactionComputer();
+        const signature = await signer.sign(computer.computeBytesForSigning(tx));
+        tx.signature = Uint8Array.from(signature);
+
+        // Mock being registered
+        vi.spyOn(relayer, 'isAuthorized').mockResolvedValue(true);
+        // Mock simulation failure
+        mockProvider.simulateTransaction = vi.fn().mockResolvedValue({
+            execution: {
+                result: 'fail',
+                message: 'insufficient funds',
+                gasConsumed: 100n
+            }
+        });
+
+        await expect(relayer.signAndRelay(tx)).rejects.toThrow(
+            'On-chain simulation failed: insufficient funds',
         );
     });
 

@@ -112,11 +112,10 @@ export class RelayerService {
             // Decode the result. EIP-8004/MX-8004 returns u64 for agent_id.
             // 0 means not registered.
             const raw = Buffer.from(returnData[0], 'base64');
-            const agentId =
-                raw.length > 0 ? parseInt(raw.toString('hex'), 16) : 0;
+            const agentId = raw.length > 0 ? BigInt('0x' + raw.toString('hex')) : 0n;
 
-            console.log(`Authorization: Agent ID found: ${agentId}`);
-            return agentId > 0;
+            console.log(`Authorization: Agent ID found: ${agentId.toString()}`);
+            return agentId > 0n;
         } catch (error) {
             console.error('Authorization: Agent registration check failed:', error);
             return false;
@@ -194,7 +193,7 @@ export class RelayerService {
             const simulationResult = await this.provider.simulateTransaction(tx);
             console.log(
                 'Relay: Simulation raw result:',
-                JSON.stringify(simulationResult),
+                JSON.stringify(simulationResult, (_, v) => typeof v === 'bigint' ? v.toString() : v),
             );
 
             // Robust Parser: Handle both flattened (API) and nested (Proxy/Gateway) structures
